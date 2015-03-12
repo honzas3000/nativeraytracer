@@ -18,7 +18,6 @@ public class RayTracerLibrary {
         bitmap = Bitmap.createBitmap(res_x, res_y, Bitmap.Config.ARGB_8888);
         changeBitmap(bitmap);
         
-        
     }
 	
 	/**
