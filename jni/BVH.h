@@ -1,6 +1,7 @@
 #ifndef _BVH
 #define _BVH
 
+#include <stdlib.h>
 #include <AABB.h>
 #include <Structures.h>
 
@@ -8,13 +9,10 @@
 struct BVH_node {
     AABB box; // 24B
 	int* primArray;
-	int numPrim;
+	int numPrim_isLeaf;
 	int leftChild;
-	int rightChild;
 
-	bool isLeaf; // 1B
-
-	BVH_node() : leftChild(-1), rightChild(-1), isLeaf(false) {}
+	BVH_node() : leftChild(-1), numPrim_isLeaf(0) {}
 };
 
 struct nodeBucket {
@@ -52,9 +50,8 @@ private:
 	// For queries
 	//BVH_node** nodeStack;
 public:
-	BVH() : C_t(2.0f), C_i(1.0f), divBuckets(10), numPrimInLeaf(1) {
-		nodeList = new BVH_node[100000];
-		nodeList_size = 100000;
+	BVH() : C_t(2.0f), C_i(1.0f), divBuckets(10), numPrimInLeaf(3) {
+
 
 		bucketList = new nodeBucket[divBuckets];
 	}
@@ -240,6 +237,9 @@ public:
 	void createBVH(Vertex* &_vertArray, const int &_numVert, Triangle* &_triArray, const int &_numTri) {
 		//int numNodes = 0;
 
+		nodeList = new BVH_node[_numTri * 2];
+		nodeList_size = _numTri * 2;
+
 		vertArray = _vertArray;
 		numVert = _numVert;
 		triArray = _triArray;
@@ -253,21 +253,21 @@ public:
 		}
 
 		BVH_node* root = &nodeList[0];
-		numBvhNodes = 1;
+		numBvhNodes = 2;
 
 		root->primArray = primArray;
-		root->numPrim = numTri;
-		containPrimitives(root->box, root->primArray, root->numPrim);
+		root->numPrim_isLeaf = numTri;
+		containPrimitives(root->box, root->primArray, root->numPrim_isLeaf);
 		//numNodes++;
 
 		// If the number of primitives is lower than the number of primitives for a leaf.
 		if(numTri <= numPrimInLeaf) {
-			root->isLeaf = true;
+			//root->isLeaf = true;
 			//nodeStack = new BVH_node*[numBvhNodes];
 			return;
 		}
 
-		root->isLeaf = false;
+		//root->isLeaf = false;
 
 		int* toSubdivideStack = new int[numTri];
 		int toSubdivideStack_size = numTri;
@@ -283,8 +283,8 @@ public:
 			curNode = &nodeList[toSubdivideStack[numToSubdivide-1]];
 			numToSubdivide--;
 
-			if(curNode->numPrim <= numPrimInLeaf) {
-				curNode->isLeaf = true; // Do not subdivide further.
+			if(curNode->numPrim_isLeaf <= numPrimInLeaf) {
+				//curNode->isLeaf = true; // Do not subdivide further.
 			} else {
 				if(nodeList_size - numBvhNodes < 2) {
 					LOGI("Reallocating nodeList.");
@@ -314,7 +314,7 @@ public:
 
 				// The primitive sub list to work with.
 				primSubList = curNode->primArray;
-				numPrimSubList = curNode->numPrim;
+				numPrimSubList = curNode->numPrim_isLeaf;
 				//LOGI("primSubList obtained.");
 
 				sortPrimitiveArray(primSubList, numPrimSubList, divAxis);
@@ -327,21 +327,21 @@ public:
 				//int divIndex = 1;
 
 				leftChild->primArray = primSubList;
-				leftChild->numPrim = divIndex;
+				leftChild->numPrim_isLeaf = divIndex;
 				rightChild->primArray = primSubList + divIndex;
-				rightChild->numPrim = numPrimSubList - divIndex;
+				rightChild->numPrim_isLeaf = numPrimSubList - divIndex;
 
 				// left child, contain triangles in the box
-				containPrimitives(leftChild->box, leftChild->primArray, leftChild->numPrim);
+				containPrimitives(leftChild->box, leftChild->primArray, leftChild->numPrim_isLeaf);
 				// right child, contain triangles in the box
-				containPrimitives(rightChild->box, rightChild->primArray, rightChild->numPrim);
+				containPrimitives(rightChild->box, rightChild->primArray, rightChild->numPrim_isLeaf);
 
 				curNode->primArray = NULL;
-				curNode->numPrim = 0;
+				curNode->numPrim_isLeaf = 0;
 				/*curNode->leftChild = leftChild;
 				curNode->rightChild = rightChild;*/
 				curNode->leftChild = numBvhNodes - 2;
-				curNode->rightChild = numBvhNodes - 1;
+				//curNode->rightChild = numBvhNodes - 1;
 
 				if(toSubdivideStack_size - numToSubdivide < 2) {
 					//LOGI("Reallocating the toSubdivide stack.");
@@ -386,14 +386,14 @@ public:
 			nodeStackSize--;
 			// If the ray intersects this box, check its left and right child.
 			if(currentNode->box.checkRayIntersect(origin_x, origin_y, origin_z, x, y, z)) {
-				if(!currentNode->isLeaf) {
+				if(!currentNode->numPrim_isLeaf) {
 					nodeStack[nodeStackSize] = &nodeList[currentNode->leftChild];
 					nodeStackSize++;
-					nodeStack[nodeStackSize] = &nodeList[currentNode->rightChild];
+					nodeStack[nodeStackSize] = &nodeList[currentNode->leftChild + 1];
 					nodeStackSize++;
 				} else {
 					int* leafPrimArray = currentNode->primArray;
-					int numLeafPrim = currentNode->numPrim;
+					int numLeafPrim = currentNode->numPrim_isLeaf;
 
 					for(int i=0; i<numLeafPrim; i++) {
 						int pr = currentNode->primArray[i];
@@ -437,14 +437,14 @@ public:
 			//box_t = currentNode->box.checkRayIntersect_new(origin_x, origin_y, origin_z, inv_x, inv_y, inv_z);
 			bool box_t_is = currentNode->box.checkRayIntersect_new(origin_x, origin_y, origin_z, inv_x, inv_y, inv_z);
 			if(box_t_is) {
-				if(!currentNode->isLeaf) {
+				if(!currentNode->numPrim_isLeaf) {
 					nodeStack[nodeStackSize] = &nodeList[currentNode->leftChild];
 					nodeStackSize++;
-					nodeStack[nodeStackSize] = &nodeList[currentNode->rightChild];
+					nodeStack[nodeStackSize] = &nodeList[currentNode->leftChild + 1];
 					nodeStackSize++;
 				} else {
 					leafPrimArray = currentNode->primArray;
-					numLeafPrim = currentNode->numPrim;
+					numLeafPrim = currentNode->numPrim_isLeaf;
 
 					for(int i=0; i<numLeafPrim; i++) {
 						int pr = currentNode->primArray[i];
@@ -535,9 +535,9 @@ public:
             }
 
             if(newType == TYPE_SQUARE) {
-                if(curJob.nodeToCheck->isLeaf) {
+                if(curJob.nodeToCheck->numPrim_isLeaf) {
                     leafPrimArray = curJob.nodeToCheck->primArray;
-                    numLeafPrim = curJob.nodeToCheck->numPrim;
+                    numLeafPrim = curJob.nodeToCheck->numPrim_isLeaf;
                     // All rays with all triangles in the AABB.
                     for(int r=0; r<numRays; r++) {
                         ray = &rays[r];
@@ -555,7 +555,7 @@ public:
                 } else {
                     rayPacketJobStack[stackSize_packet].nodeToCheck = &(nodeList[curJob.nodeToCheck->leftChild]);
                     stackSize_packet++;
-                    rayPacketJobStack[stackSize_packet].nodeToCheck = &(nodeList[curJob.nodeToCheck->rightChild]);
+                    rayPacketJobStack[stackSize_packet].nodeToCheck = &(nodeList[curJob.nodeToCheck->leftChild + 1]);
                     stackSize_packet++;
                 }
             } else {
