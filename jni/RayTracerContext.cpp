@@ -370,17 +370,7 @@ void RayTracerContext::getDeviceInfo(const cl_device_id &deviceID) {
 	free(global_mem);
 }
 
-
-
-void* printHovno(void* threadID) {
-	LOGI("Thread %d executed.", ((int)threadID));
-
-	return NULL;
-}
-
-
-
-void* RayTracerContext::rayTraceSceneThread(void* thread_id_context) {
+void RayTracerContext::rayTrace_thread_grid(void* thread_id_context) {
 	pthread_args* thread_args = (pthread_args*)thread_id_context;
 	int id = thread_args->id;
 
@@ -604,23 +594,19 @@ void* RayTracerContext::rayTraceSceneThread(void* thread_id_context) {
 						g += g_cur;
 						b += b_cur;
 					} else {
-						r += 0.6f * current_rayItem.intensity_coef;
-						g += 0.6f * current_rayItem.intensity_coef;
-						b += 1.0f * current_rayItem.intensity_coef;
+						r += 0.2f * current_rayItem.intensity_coef;
+						g += 0.2f * current_rayItem.intensity_coef;
+						b += 0.2f * current_rayItem.intensity_coef;
 					}
 				}
 
-				//} else { // Background.
-				//	pixels_uint[i + (j)*bitmapInfo.width] = argb_to_int(255, 125, 125, 125);
-				//}
 				// Limit the color components to 1.0f.
 				r = r > 1.0f ? 1.0f : r;
 				g = g > 1.0f ? 1.0f : g;
 				b = b > 1.0f ? 1.0f : b;
 
-				if(bmp_rows < bitmapInfo.width * bitmapInfo.height) { // Just to make sure, remove later.
-					pixels_uint_thread[i + (j)*bitmapInfo.width] = argb_to_int(255, (int)(255.0f * r), (int)(255.0f * g), (int)(255.0f * b));
-				}
+                // Set the color in the color buffer.
+                pixels_uint_thread[i + (j)*bitmapInfo.width] = argb_to_int(255, (int)(255.0f * r), (int)(255.0f * g), (int)(255.0f * b));
 
 				bmp_rows += bitmapInfo.width;
 
@@ -630,30 +616,316 @@ void* RayTracerContext::rayTraceSceneThread(void* thread_id_context) {
 			pixel_w += cam.x_step;
 		} // End of i
 	}
+}
 
-	//LOGI("Completed thread exec.: %d, %d x %d, %d", screen_range->start_x, screen_range->end_x, screen_range->start_y, screen_range->end_y);
+void RayTracerContext::rayTrace_thread_horSlabs(void* thread_id_context) {
+	pthread_args* thread_args = (pthread_args*)thread_id_context;
+	int id = thread_args->id;
 
-	return NULL;
+	//thread_range* screen_range = &thread_ranges[id];
+
+    int nearestObj_cam, nearestObj_light;
+	int nearestStaticTri_cam, nearestDynamicTri_cam;
+	int nearestStaticTri_light, nearestDynamicTri_light;
+	float t_cam, t_light, t_cam_dyn;
+
+	int nearestToLightIdx, nearestToCamIdx;
+
+	Vertex pixel_w;
+	Vertex row_step_back = -((float)(bitmapInfo.width) * cam.x_step);
+	Vertex pixel_skip_y = ((float)((NUM_THREADS - 1) * LINES_PER_SLAB) * cam.y_step);
+	Vertex contactPoint, ray, inv_ray, lightRay, inv_lightRay, surfaceNormal, proj_surfaceNormal, invertedNormal;
+
+	Vertex reflectedRay, refractedRay;
+
+	int numRayStack_thread;
+	RayItem rayStack_thread[rayStack_size]; // Each thread needs its own stack.
+	RayItem current_rayItem;
+
+	float r, g, b, r_cur, g_cur, b_cur;
+
+	int color_buffer_index;
+
+	// Acquire the pixel array;
+	uint32_t* pixels_uint_thread = (uint32_t*) pixels;
+
+	// Find the first pixel for this thread.
+	pixel_w = (cam.proj_origin - cam.pos) + (cam.y_step * (float)(id * LINES_PER_SLAB));
+
+    // All the horizontal slabs this thread has to render.
+	for(unsigned int k = id*LINES_PER_SLAB; k<bitmapInfo.height; k += NUM_THREADS*LINES_PER_SLAB) {
+        color_buffer_index = k * bitmapInfo.width;
+        // All the image rows in this slab.
+        unsigned int j_end = k + LINES_PER_SLAB;
+		for(unsigned int j=k; j<j_end; j++) {
+			for(unsigned int i=0; i<bitmapInfo.width; i++) {
+				r = 0.0f;
+				g = 0.0f;
+				b = 0.0f;
+
+				numRayStack_thread = 0;
+				// The first primary ray.
+				//pixel_w = cam.proj_origin + i*cam.x_step + j*cam.y_step - cam.pos;
+
+				memcpy(&ray, &pixel_w, sizeof(Vertex));
+				//ray -= cam.pos;
+
+				rayStack_thread[numRayStack_thread].dir.x = ray.x;
+				rayStack_thread[numRayStack_thread].dir.y = ray.y;
+				rayStack_thread[numRayStack_thread].dir.z = ray.z;
+				rayStack_thread[numRayStack_thread].orig.x = cam.pos.x;
+				rayStack_thread[numRayStack_thread].orig.y = cam.pos.y;
+				rayStack_thread[numRayStack_thread].orig.z = cam.pos.z;
+				rayStack_thread[numRayStack_thread].intensity_coef = 1.0f;
+				rayStack_thread[numRayStack_thread].recursion_number = 0;
+
+				numRayStack_thread++;
+
+				while(numRayStack_thread > 0) {
+					current_rayItem = rayStack_thread[numRayStack_thread-1];
+					numRayStack_thread--;
+
+					memcpy(&ray, &(current_rayItem.dir), sizeof(Vertex));
+
+					normalize(ray);
+
+					inv_ray.x = 1.0f / ray.x;
+					inv_ray.y = 1.0f / ray.y;
+					inv_ray.z = 1.0f / ray.z;
+
+					nearestStaticTri_cam = -1;
+					nearestToLightIdx = -2;
+
+//                    nearestToCamObjIdx = -1;
+
+					t_cam = bvh.findNearestPrimitive_new(ray.x, ray.y, ray.z,
+														 inv_ray.x, inv_ray.y, inv_ray.z,
+														 current_rayItem.orig.x, current_rayItem.orig.y, current_rayItem.orig.z,
+														 &nearestStaticTri_cam);
+
+//                    t_cam_dyn = obvh.findNearestObject(ray.x, ray.y, ray.z,
+//                                                       inv_ray.x, inv_ray.y, inv_ray.z,
+//                                                       current_rayItem.orig.x, current_rayItem.orig.y, current_rayItem.orig.z,
+//                                                       &nearestObj_cam, &nearestDynamicTri_cam);
+
+
+					if(nearestStaticTri_cam >= 0) {
+						//LOGI("I see a triangle!");
+
+						contactPoint.x = current_rayItem.orig.x + t_cam * ray.x;
+						contactPoint.y = current_rayItem.orig.y + t_cam * ray.y;
+						contactPoint.z = current_rayItem.orig.z + t_cam * ray.z;
+
+						Material* mat = &(matArray[triArray[nearestStaticTri_cam].mat]);
+						if(triArray[nearestStaticTri_cam].n_calculated) {
+							memcpy(&surfaceNormal, &(triArray[nearestStaticTri_cam].n), sizeof(Vertex));
+						} else {
+							// update triangle normal, don't forget to divide by inv_norm
+						}
+
+						// Ambient
+//						float _r = 0.0f, _g = 0.0f, _b = 0.0f;
+//						switch(id) {
+//                            case 0: {
+//                                _r = 0; _g = 1; _b = 0;
+//                            } break;
+//                            case 1: {
+//                                _r = 1; _g = 0; _b = 0;
+//                            } break;
+//                            case 2: {
+//                                _r = 0; _g = 0; _b = 1;
+//                            } break;
+//                            case 3: {
+//                                _r = 1; _g = 1; _b = 1;
+//                            } break;
+//                        }
+//                        r_cur = _r;
+//						g_cur = _g;
+//						b_cur = _b;
+
+						r_cur = ambient * mat->r;
+						g_cur = ambient * mat->g;
+						b_cur = ambient * mat->b;
+	#ifdef LIGHTS
+						// Find all the lights that light up the nearest primitive.
+						for(int k=0; k<numPointLights; k++) {
+							memcpy(&lightRay, &contactPoint, sizeof(Vertex));
+							lightRay -= ptLightArray[k].pos;
+							//lightRay = contactPoint - Vec3(pointLightArray[k*6], pointLightArray[k*6 + 1], pointLightArray[k*6 + 2]);
+
+							t_light = bvh.findNearestPrimitive(lightRay.x, lightRay.y, lightRay.z, ptLightArray[k].pos.x, ptLightArray[k].pos.y, ptLightArray[k].pos.z, nearestToLightIdx);
+							//t_light = findNearestPrimitive(lightRay.x, lightRay.y, lightRay.z, pointLightArray[k*6], pointLightArray[k*6 + 1], pointLightArray[k*6 + 2], nearestToLightIdx);
+
+							if(nearestStaticTri_cam == nearestToLightIdx) { // && type_cam == type_light
+								float lightRay_inv_norm = inv_norm(lightRay);
+								float proj = dot(surfaceNormal, lightRay);
+
+								// Diffuse
+								float diffuse_cos = -proj * lightRay_inv_norm;
+								if(diffuse_cos > 0.0f) { // light_cos > 0.0f
+									float coef = mat->kd * diffuse_cos;
+									r_cur += coef * ptLightArray[k].r * mat->r;
+									g_cur += coef * ptLightArray[k].g * mat->g;
+									b_cur += coef * ptLightArray[k].b * mat->b;
+								}
+
+								// Specular (reflected dot toObserver)
+								memcpy(&proj_surfaceNormal, &surfaceNormal, sizeof(Vertex));
+								proj_surfaceNormal *= (proj + proj);
+
+								lightRay -= proj_surfaceNormal;
+
+								float spec_cos = cosine(lightRay, ray);
+								if(spec_cos <= 0.0f) { // This might be stupid and useless.
+									float coef = mat->ks * pow(spec_cos, mat->shine);
+									r_cur += coef * ptLightArray[k].r;
+									g_cur += coef * ptLightArray[k].g;
+									b_cur += coef * ptLightArray[k].b;
+								}
+							}
+						}
+	#endif
+						r_cur *= current_rayItem.intensity_coef;
+						g_cur *= current_rayItem.intensity_coef;
+						b_cur *= current_rayItem.intensity_coef;
+
+    #ifdef SECONDARY_RAYS
+						if(current_rayItem.recursion_number < recursion_depth) {
+
+							//float ray_inv_norm = inv_norm(ray);
+							float proj = dot(surfaceNormal, ray);
+
+							// Reflected ray
+							if(proj < 0.0f && mat->ks > 0.0f) { // can determine earlier
+								memcpy(&reflectedRay, &ray, sizeof(Vertex));
+								memcpy(&proj_surfaceNormal, &surfaceNormal, sizeof(Vertex));
+
+								proj_surfaceNormal *= (proj + proj);
+								reflectedRay -= proj_surfaceNormal;
+
+								normalize(reflectedRay);
+								//reflectedRay = Vec3::normalize(ray + 2.0f * Vec3::dot(-1.0f*ray, surfaceNormal) * surfaceNormal);
+
+								rayStack_thread[numRayStack_thread].dir = reflectedRay;
+								rayStack_thread[numRayStack_thread].orig.x = reflectedRay.x * rec_ray_offset + contactPoint.x;
+								rayStack_thread[numRayStack_thread].orig.y = reflectedRay.y * rec_ray_offset + contactPoint.y;
+								rayStack_thread[numRayStack_thread].orig.z = reflectedRay.z * rec_ray_offset + contactPoint.z;
+								rayStack_thread[numRayStack_thread].intensity_coef = mat->ks * current_rayItem.intensity_coef;
+								rayStack_thread[numRayStack_thread].recursion_number = current_rayItem.recursion_number + 1;
+
+								numRayStack_thread++;
+							}
+
+							// Refracted ray
+							if(mat->T > 0.0f) {
+
+								memcpy(&invertedNormal, &surfaceNormal, sizeof(Vertex));
+
+								//Vec3 normalizedRay = Vec3::normalize(ray), refractedRay, invertedNormal;
+
+								float cos_theta_1 = cosine1(ray, surfaceNormal), ior, sqrterm;
+
+								if(cos_theta_1 < 0.0f) {
+									ior = IOR_AIR / mat->ior;
+									//invertedNormal = surfaceNormal;
+								} else {
+									ior = mat->ior / IOR_AIR;
+									cos_theta_1 *= -1.0f;
+									//invertedNormal = -1.0f*surfaceNormal;
+									invertedNormal *= -1.0f;
+								}
+								sqrterm = 1.0f - ior*ior*(1.0f - cos_theta_1*cos_theta_1);
+
+								if(sqrterm > 0.0f) {
+									sqrterm = cos_theta_1*ior + sqrt(sqrterm);
+
+									memcpy(&refractedRay, &ray, sizeof(Vertex));
+									refractedRay *= ior;
+									refractedRay += invertedNormal * (-sqrterm);
+
+									//refractedRay = invertedNormal * (-sqrterm) + normalizedRay * ior;
+								}
+
+								//Vec3 refractedRay = Vec3::normalize(ray);
+								rayStack_thread[numRayStack_thread].dir = refractedRay;
+								rayStack_thread[numRayStack_thread].orig.x = refractedRay.x * rec_ray_offset + contactPoint.x;
+								rayStack_thread[numRayStack_thread].orig.y = refractedRay.y * rec_ray_offset + contactPoint.y;
+								rayStack_thread[numRayStack_thread].orig.z = refractedRay.z * rec_ray_offset + contactPoint.z;
+								rayStack_thread[numRayStack_thread].intensity_coef = mat->T * current_rayItem.intensity_coef;
+								rayStack_thread[numRayStack_thread].recursion_number = current_rayItem.recursion_number + 1;
+
+								numRayStack_thread++;
+							}
+						}
+	#endif
+						r += r_cur;
+						g += g_cur;
+						b += b_cur;
+					} else {
+//					    float _r = 0, _g = 0, _b = 0;
+//					    switch(id) {
+//                            case 0: {
+//                                _r = 0; _g = 1; _b = 0;
+//                            } break;
+//                            case 1: {
+//                                _r = 1; _g = 0; _b = 0;
+//                            } break;
+//                            case 2: {
+//                                _r = 0; _g = 0; _b = 1;
+//                            } break;
+//                            case 3: {
+//                                _r = 1; _g = 1; _b = 1;
+//                            } break;
+//                        }
+
+						r += 0.1f * current_rayItem.intensity_coef;
+						g += 0.1f * current_rayItem.intensity_coef;
+						b += 0.1f * current_rayItem.intensity_coef;
+					}
+				}
+
+				// Limit the color components to 1.0f.
+				r = r > 1.0f ? 1.0f : r;
+				g = g > 1.0f ? 1.0f : g;
+				b = b > 1.0f ? 1.0f : b;
+
+                // Set the color in the color buffer.
+//                if(color_buffer_index < bitmapInfo.width * bitmapInfo.height) {
+//                    pixels_uint_thread[color_buffer_index] = argb_to_int(255, (int)(255.0f * r), (int)(255.0f * g), (int)(255.0f * b));
+//                }
+                pixels_uint_thread[color_buffer_index] = argb_to_int(255, (int)(255.0f * r), (int)(255.0f * g), (int)(255.0f * b));
+
+				pixel_w += cam.x_step; // Step one pixel to the right.
+				color_buffer_index++;
+			} // End of i
+			pixel_w += row_step_back; // Step back to the first column.
+			pixel_w += cam.y_step; // Advance to the next row.
+		} // End of j
+		pixel_w += pixel_skip_y;
+	} // End of k
 }
 
 void* rayTraceSceneThread_wrapper(void* thread_id_context) {
 	RayTracerContext* cntxt = (RayTracerContext*)(((pthread_args*)thread_id_context)->context);
 
 #ifdef USE_RAY_PACKETS
-    return cntxt->rayTraceScenePacketsThread(thread_id_context);
+    cntxt->rayTraceScenePacketsThread(thread_id_context);
 #else
-    return cntxt->rayTraceSceneThread(thread_id_context);
+    #ifdef GRID
+        cntxt->rayTrace_thread_grid(thread_id_context);
+    #else
+        cntxt->rayTrace_thread_horSlabs(thread_id_context);
+    #endif
 #endif
 
+    return NULL;
 }
 
 void RayTracerContext::rayTraceSceneThreads(const float &delta) {
-	//LOGI("int* size: %d", sizeof(int*));
-
 	// Camera movement
 	angle += deltaAngle * delta;
-	Vertex new_dir = {-camDist * cos(angle), 0.0f, -camDist * sin(angle)};
-	Vertex new_pos = {camPos.x + camDist * cos(angle), camPos.y, camPos.z + camDist * sin(angle)};
+	Vertex new_dir = {-camDist * cos(angle), -camHeight, -camDist * sin(angle)};
+	Vertex new_pos = {camPos.x + camDist * cos(angle), camPos.y + camHeight, camPos.z + camDist * sin(angle)};
 //	Vertex new_dir = {-19725.9f + 19726.8f, 10746.7f - 10747.1f, 5461.97f - 5462.21f};
 //	Vertex new_pos = {-19726.8f, 10747.1f, 5462.21f};
 	cam.changeDir(new_dir);
@@ -673,7 +945,7 @@ void RayTracerContext::rayTraceSceneThreads(const float &delta) {
 	delete[] thread_args;
 }
 
-// Rendering
+// Single-threaded ray tracing of the scene, no packets.
 void RayTracerContext::rayTraceScene(const float &delta) {
 	// Camera movement
 	angle += deltaAngle * delta;
@@ -898,7 +1170,7 @@ void RayTracerContext::rayTraceScene(const float &delta) {
 		pixel_w += col_step_back;
 		pixel_w += cam.x_step;
 	} // End of i
-} // End of rayTraceScene
+}
 
 void RayTracerContext::rayTraceSceneCL(const float &delta) {
     // Camera movement

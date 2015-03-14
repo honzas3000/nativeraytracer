@@ -119,6 +119,8 @@ public:
         Vertex center = {(data[MAX_X] + data[MIN_X]) / 2.0f,
                          (data[MAX_Y] + data[MIN_Y]) / 2.0f,
                          (data[MAX_Z] + data[MIN_Z]) / 2.0f};
+
+        LOGI("Box: %f - %f, %f - %f, %f - %f", data[MAX_X], data[MIN_X], data[MAX_Y], data[MIN_Y], data[MAX_Z], data[MIN_Z]);
         return center;
     }
 

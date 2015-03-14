@@ -1,9 +1,30 @@
-#ifndef _RAY_TRACER_CONTEXT
-#define _RAY_TRACER_CONTEXT
+#ifndef _RAY_TRACER_CONTEXT_H
+#define _RAY_TRACER_CONTEXT_H
+
+//// CONFIGURATION ///////////////////////////////
+//////////////////////////////////////////////////
+#define NUM_THREADS 4
+#define CELL_SIZE 8
+#define PACKET_SIZE 8
+#define NUM_RAYS_PACKET PACKET_SIZE*PACKET_SIZE
 
 //#define ONE_THREAD
 //#define CL
 #define RAY_THREADS
+
+#ifdef RAY_THREADS
+//    #define GRID
+    #define HOR_SLABS
+#endif
+
+// The vertical resolution must be a multiple of LINES_PER_SLAB
+#ifdef HOR_SLABS
+    #define LINES_PER_SLAB 8
+#endif
+
+
+//// CONFIGURATION ///////////////////////////////
+//////////////////////////////////////////////////
 
 //#include <vector>
 //#define __CL_ENABLE_EXCEPTIONS
@@ -18,6 +39,7 @@
 #include <sstream>
 #include <cstdio>
 #include <cstdlib>*/
+
 #include <iostream>
 #include <string>
 #include <fstream>
@@ -122,10 +144,7 @@ private:
 	int raypacket_x, raypacket_y;
 
 	// Pthreads
-#define NUM_THREADS 4
-#define CELL_SIZE 8
-#define PACKET_SIZE 8
-#define NUM_RAYS_PACKET PACKET_SIZE*PACKET_SIZE
+
 
 	pthread_t threads[NUM_THREADS];
 	//pthread_args thread_args[NUM_THREADS];
@@ -139,6 +158,7 @@ private:
     AABB sceneBox;
     Vertex camPos;
     float camDist;
+    float camHeight;
 public:
 	// OpenCL
 	void printError(cl_int errorCode);
@@ -379,6 +399,7 @@ public:
 		// Init camera parameters.
         camPos = sceneBox.getCenter();
         camDist = fmax(sceneBox.getXsize(), fmax(sceneBox.getYsize(), sceneBox.getZsize())) * 1.2f;
+        camHeight = sceneBox.getYsize() * 0.5f;
 
 #ifdef CL
 		initCL();
@@ -387,7 +408,6 @@ public:
 #ifdef RAY_THREADS
 		initThreads();
 		initThreadsCells();
-		int x = 10;
 #endif
 	}
 
@@ -506,7 +526,8 @@ public:
 
     /// Render using multiple CPU threads
     // slave thread functions
-	void* rayTraceSceneThread(void* screenRange);
+	void rayTrace_thread_grid(void* screenRange);
+	void rayTrace_thread_horSlabs(void* thread_id_context);
 	void* rayTraceScenePacketsThread(void* thread_id_context);
 
     // master function

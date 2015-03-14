@@ -2,15 +2,18 @@
 #define _BVH
 
 #include <stdlib.h>
+//#include <arm_neon.h>
+
 #include <AABB.h>
 #include <Structures.h>
+
 
 
 struct BVH_node {
     AABB box; // 24B
 	int* primArray;
-	int numPrim_isLeaf;
-	int leftChild;
+	int numPrim_isLeaf; // If the number of primitives is 0, the node is interior.
+	int leftChild; // Right child is leftChild + 1.
 
 	BVH_node() : leftChild(-1), numPrim_isLeaf(0) {}
 };
@@ -27,7 +30,7 @@ struct nodeBucket {
 };
 
 class BVH {
-private:
+    // Construction data.
 	float C_t, C_i;
 	int divBuckets, numPrimInLeaf;
 	nodeBucket* bucketList;
@@ -51,8 +54,6 @@ private:
 	//BVH_node** nodeStack;
 public:
 	BVH() : C_t(2.0f), C_i(1.0f), divBuckets(10), numPrimInLeaf(3) {
-
-
 		bucketList = new nodeBucket[divBuckets];
 	}
 
@@ -237,8 +238,9 @@ public:
 	void createBVH(Vertex* &_vertArray, const int &_numVert, Triangle* &_triArray, const int &_numTri) {
 		//int numNodes = 0;
 
-		nodeList = new BVH_node[_numTri * 2];
-		nodeList_size = _numTri * 2;
+//        nodeList = (BVH_node*)(aligned_alloc(32, sizeof(BVH_node) * (_numTri << 1)));
+		nodeList = new BVH_node[_numTri << 1];
+		nodeList_size = _numTri << 1;
 
 		vertArray = _vertArray;
 		numVert = _numVert;
