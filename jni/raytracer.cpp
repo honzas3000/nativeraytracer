@@ -18,39 +18,33 @@ JNIEXPORT jint JNICALL Java_com_janlangr_nativeraytracerlib_RayTracerLibrary_pro
 	return 0;
 }
 
-JNIEXPORT jint JNICALL Java_com_janlangr_nativeraytracerlib_RayTracerLibrary_addTriangle(JNIEnv* env, jobject thiz, jint v1_idx, jint v2_idx, jint v3_idx, jint mat_idx) {
-	return context.addTriangle(v1_idx, v2_idx, v3_idx, mat_idx);
+JNIEXPORT jint JNICALL Java_com_janlangr_nativeraytracerlib_RayTracerLibrary_addTriangle(JNIEnv* env, jclass clazz, jint meshID,
+		jfloat v1x, jfloat v1y, jfloat v1z, jfloat v2x, jfloat v2y, jfloat v2z, jfloat v3x, jfloat v3y, jfloat v3z, jint mat_idx) {
+	return context.addTriangle(meshID, v1x, v1y, v1z, v2x, v2y, v2z, v3x, v3y, v3z, mat_idx);
 }
 
-JNIEXPORT jint JNICALL Java_com_janlangr_nativeraytracerlib_RayTracerLibrary_addVertex(JNIEnv* env, jobject thiz, jfloat x, jfloat y, jfloat z) {
-	return context.addVertex(x, y, z);
-}
+//JNIEXPORT jint JNICALL Java_com_janlangr_nativeraytracerlib_RayTracerLibrary_addVertex(JNIEnv* env, jclass clazz, jint meshID, jfloat x, jfloat y, jfloat z) {
+//	return context.addVertex(meshID, x, y, z);
+//}
 
-JNIEXPORT jint JNICALL Java_com_janlangr_nativeraytracerlib_RayTracerLibrary_addMaterial(JNIEnv* env, jobject thiz,
+JNIEXPORT jint JNICALL Java_com_janlangr_nativeraytracerlib_RayTracerLibrary_addMaterial(JNIEnv* env, jclass clazz,
 		jfloat r, jfloat g, jfloat b, jfloat kd, jfloat ks, jfloat shine, jfloat _T, jfloat ior) {
 	return context.addMaterial(r, g, b, kd, ks, shine, _T, ior);
 }
 
-JNIEXPORT jint JNICALL Java_com_janlangr_nativeraytracerlib_RayTracerLibrary_addPointLight(JNIEnv* env, jobject thiz,
+JNIEXPORT jint JNICALL Java_com_janlangr_nativeraytracerlib_RayTracerLibrary_addPointLight(JNIEnv* env, jclass clazz,
 		jfloat x, jfloat y, jfloat z, jfloat r, jfloat g, jfloat b) {
 	return context.addPointLight(x, y, z, r, g, b);
 }
 
-// DYNAMIC OBJECT METHODS //////////////
-/// Create a new dynamic object within the context.
-JNIEXPORT jint JNICALL Java_com_janlangr_nativeraytracerlib_RayTracerLibrary_createDynamicObject(JNIEnv* env, jclass clazz, jint numVert, jint numTri) {
-	return context.createDynamicObject(numVert, numTri);
+// OBJECT METHODS //////////////
+/// Create a new mesh template.
+JNIEXPORT jint JNICALL Java_com_janlangr_nativeraytracerlib_RayTracerLibrary_createMeshTemplate(JNIEnv* env, jclass clazz, jint numVert, jint numTri) {
+	return context.createMeshTemplate(numVert, numTri);
 }
-
-/// Add a vertex to the specified dynamic object.
-JNIEXPORT jint JNICALL Java_com_janlangr_nativeraytracerlib_RayTracerLibrary_addDynamicVertex(JNIEnv* env, jclass clazz, jint dynObjIdx, jfloat x, jfloat y, jfloat z) {
-	return context.addDynamicVertex(dynObjIdx, x, y, z);
-}
-
-/// Add a triangle to the specified dynamic object.
-JNIEXPORT jint JNICALL Java_com_janlangr_nativeraytracerlib_RayTracerLibrary_addDynamicTriangle(JNIEnv* env, jclass clazz, jint dynObjIdx,
-                                                                                                jint v1_idx, jint v2_idx, jint v3_idx, jint mat_idx) {
-	return context.addDynamicTriangle(dynObjIdx, v1_idx, v2_idx, v3_idx, mat_idx);
+/// Create a new object based on a mesh template.
+JNIEXPORT jint JNICALL Java_com_janlangr_nativeraytracerlib_RayTracerLibrary_createObject(JNIEnv* env, jclass clazz, jint meshID) {
+	return context.createObject(meshID);
 }
 
 JNIEXPORT void JNICALL Java_com_janlangr_nativeraytracerlib_RayTracerLibrary_initialize(JNIEnv* env, jobject thiz) {

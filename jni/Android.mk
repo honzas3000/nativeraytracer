@@ -18,7 +18,7 @@ include $(CLEAR_VARS)
 
 LOCAL_MODULE    := raytracer
 LOCAL_ARM_MODE  := arm
-LOCAL_SRC_FILES := raytracer.cpp RayTracerContext.cpp RayTracerContextPacketsThread.cpp
+LOCAL_SRC_FILES := raytracer.cpp RayTracerContext.cpp RayTracerContextPacketsThread.cpp Matrix.cpp
 LOCAL_CPPFLAGS	:= -I$(LOCAL_PATH)/include
 LOCAL_CPPFLAGS 	+= -fexceptions
 

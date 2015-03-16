@@ -56,6 +56,9 @@ struct Vertex {
 	float x;
 	float y;
 	float z;
+
+//    Vertex() {}
+//	Vertex(float _x, float _y, float _z) : x(_x), y(_y), z(_z) {}
 };
 
 inline void operator *= (const float &a, Vertex &_v) {
@@ -164,6 +167,12 @@ inline float dot(const Vertex &v1, const Vertex &v2) {
 	return (v1.x*v2.x + v1.y*v2.y + v1.z*v2.z);
 }
 
+struct Ray {
+    Vertex orig;
+    Vertex dir;
+    Vertex inv_dir;
+};
+
 struct PointLight {
 	Vertex pos;
 	float r;
@@ -182,21 +191,11 @@ struct Material {
 	float ior;
 };
 
-struct Triangle {
-	int v1_idx;
-	int v2_idx;
-	int v3_idx;
-	int mat;
-	float c[3];
-	Vertex n;
-	float n_inv_norm;
-	int n_calculated; // 0 or 1
-};
+
 
 // For the ray stack
 struct RayItem {
-	Vertex dir;
-	Vertex orig;
+	Ray ray;
 	int recursion_number;
 	float intensity_coef;
 };
@@ -215,10 +214,67 @@ struct thread_range {
 	int end_y;
 };
 
-struct Ray {
-    Vertex orig;
-    Vertex dir;
-    Vertex inv_dir;
-};
+
+//inline float rayTriangleIntersection(const int &tri_idx, const Ray &ray) {
+//    Vertex v1 = {vertArray[triArray[tri_idx].v1_idx].x, vertArray[triArray[tri_idx].v1_idx].y, vertArray[triArray[tri_idx].v1_idx].z};
+//    Vertex v2 = {vertArray[triArray[tri_idx].v2_idx].x, vertArray[triArray[tri_idx].v2_idx].y, vertArray[triArray[tri_idx].v2_idx].z};
+//    Vertex v3 = {vertArray[triArray[tri_idx].v3_idx].x, vertArray[triArray[tri_idx].v3_idx].y, vertArray[triArray[tri_idx].v3_idx].z};
+//
+//    //Vertex b = {originX - v1.x, originY - v1.y, originZ - v1.z};
+//    Vertex vec1 = {v2.x - v1.x, v2.y - v1.y, v2.z - v1.z};
+//    Vertex vec2 = {v3.x - v1.x, v3.y - v1.y, v3.z - v1.z};
+//
+//    Vertex D = ray.dir;
+//    Vertex P;
+//    cross(D, vec2, P);
+//
+//    float det = dot(vec1, P);
+//    if(det > -0.000001f && det < 0.000001f) return -1.0f;
+//    float inv_det = 1.0f / det;
+//
+//    Vertex O = ray.orig;
+//    Vertex T = O - v1;
+//
+//    float u = dot(T, P) * inv_det;
+//    if(u < 0.0f || u > 1.0f) return -1.0f;
+//
+//    Vertex Q;
+//    cross(T, vec1, Q);
+//
+//    float v = dot(D, Q) * inv_det;
+//    if(v < 0.0f || u + v > 1.0f) return -1.0f;
+//
+//    return dot(vec2, Q) * inv_det; // t
+//
+//    return 0.0f;
+//_BVHSTRUCTURES_H
+///*
+//    float detA = det(vec1.x, vec1.y, vec1.z, vec2.x, vec2.y, vec2.z, -rayX, -rayY, -rayZ);
+//
+//    if (detA == 0.0f) { // < 0.00000001
+//        return -1.0f;
+//    }
+//
+//    float detA_inv = 1.0f / detA;
+//
+//    float detA_o = det(vec1.x, vec1.y, vec1.z, vec2.x, vec2.y, vec2.z, b.x, b.y, b.z);
+//
+//    float o = detA_o * detA_inv;
+//    if (o < 0) { // The object is too close or behind the camera.
+//        return -1.0f;
+//    }
+//
+//    float detA_m = det(b.x, b.y, b.z, vec2.x, vec2.y, vec2.z, -rayX, -rayY, -rayZ);
+//    float detA_n = det(vec1.x, vec1.y, vec1.z, b.x, b.y, b.z, -rayX, -rayY, -rayZ);
+//    float m = detA_m * detA_inv;
+//    float n = detA_n * detA_inv;
+//
+//    if(m < 0.0f || n < 0.0f || m + n > 1.0f) {
+//        return -1.0f;
+//    } else {
+//        return o;
+//    }
+//*/
+//}
 
 #endif

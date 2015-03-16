@@ -71,24 +71,24 @@ void* RayTracerContext::rayTraceScenePacketsThread(void* thread_id_context) {
                 //bvh.findNearestPrimitive_Packets(&rays[0], &nearestPrimitives[0], PACKET_SIZE);
 
                 // Solve each of the rays individually for shadow and secondary rays.
-                for(int m=0; m<PACKET_SIZE; m++) {
-                    for(int n=0; n<PACKET_SIZE; n++) {
-                        int pixel_index = bmp_rows + m + n * bitmapInfo.width;
-                        int tri_idx = nearestPrimitives[m + n * PACKET_SIZE];
-                        if(tri_idx >= 0) { // nearestPrimitives[m + n * PACKET_SIZE] >= 0
-                            int re = (matArray[triArray[tri_idx].mat].r * 255.0f);
-                            int gr = (matArray[triArray[tri_idx].mat].g * 255.0f);
-                            int bl = (matArray[triArray[tri_idx].mat].b * 255.0f);
-                            if(pixel_index < bitmapInfo.width * bitmapInfo.height) { // Just to make sure, remove later.
-                                pixels_uint_thread[pixel_index] = argb_to_int(255, re, gr, bl);
-                            }
-                        } else {
-                            if(pixel_index < bitmapInfo.width * bitmapInfo.height) { // Just to make sure, remove later.
-                                pixels_uint_thread[pixel_index] = argb_to_int(255, 50, 50, 50);
-                            }
-                        }
-                    }
-                }
+//                for(int m=0; m<PACKET_SIZE; m++) {
+//                    for(int n=0; n<PACKET_SIZE; n++) {
+//                        int pixel_index = bmp_rows + m + n * bitmapInfo.width;
+//                        int tri_idx = nearestPrimitives[m + n * PACKET_SIZE];
+//                        if(tri_idx >= 0) { // nearestPrimitives[m + n * PACKET_SIZE] >= 0
+//                            int re = (matArray[triArray[tri_idx].mat].r * 255.0f);
+//                            int gr = (matArray[triArray[tri_idx].mat].g * 255.0f);
+//                            int bl = (matArray[triArray[tri_idx].mat].b * 255.0f);
+//                            if(pixel_index < bitmapInfo.width * bitmapInfo.height) { // Just to make sure, remove later.
+//                                pixels_uint_thread[pixel_index] = argb_to_int(255, re, gr, bl);
+//                            }
+//                        } else {
+//                            if(pixel_index < bitmapInfo.width * bitmapInfo.height) { // Just to make sure, remove later.
+//                                pixels_uint_thread[pixel_index] = argb_to_int(255, 50, 50, 50);
+//                            }
+//                        }
+//                    }
+//                }
 
                 // Test drawing of cells and packets.
 //                for(int m=0; m<PACKET_SIZE; m++) {

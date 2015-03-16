@@ -71,6 +71,16 @@ public:
 		if (vertex.y > data[MAX_Y]) data[MAX_Y] = vertex.y;
 		if (vertex.z > data[MAX_Z]) data[MAX_Z] = vertex.z;
     }
+
+//    void contain(const RigidObject &obj) {
+//        contain(obj.box_world);
+//    }
+//
+//    void contain(const Triangle &tri) {
+//        contain(tri.v1);
+//        contain(tri.v2);
+//        contain(tri.v3);
+//    }
 /*
     void AABB::containPrimitivesFromTo(const vector<Primitive*>& primitiveList, int inclFrom, int notInclTo) {
         Primitive* pr;
@@ -120,7 +130,7 @@ public:
                          (data[MAX_Y] + data[MIN_Y]) / 2.0f,
                          (data[MAX_Z] + data[MIN_Z]) / 2.0f};
 
-        LOGI("Box: %f - %f, %f - %f, %f - %f", data[MAX_X], data[MIN_X], data[MAX_Y], data[MIN_Y], data[MAX_Z], data[MIN_Z]);
+//        LOGI("Box: %f - %f, %f - %f, %f - %f", data[MAX_X], data[MIN_X], data[MAX_Y], data[MIN_Y], data[MAX_Z], data[MIN_Z]);
         return center;
     }
 
@@ -129,6 +139,10 @@ public:
 		float dy = data[MAX_Y] - data[MIN_Y];
 		float dz = data[MAX_Z] - data[MIN_Z];
         return 2.0f * (dx*dy + dx*dz + dy*dz);
+    }
+
+    void print() {
+        LOGI("AABB: [%f, %f], [%f, %f], [%f, %f]", data[MIN_X], data[MAX_X], data[MIN_Y], data[MAX_Y], data[MIN_Z], data[MAX_Z]);
     }
 
     bool checkRayIntersect(const float &fromX, const float &fromY, const float &fromZ,
@@ -258,6 +272,38 @@ public:
     	//t = tmin;
     	//return tmin;
     	return true;
+    }
+
+    bool intersect(const Ray &ray) {
+    	float t1 = (data[MIN_X] - ray.orig.x)*ray.inv_dir.x;
+    	float t2 = (data[MAX_X] - ray.orig.x)*ray.inv_dir.x;
+    	float t3 = (data[MIN_Y] - ray.orig.y)*ray.inv_dir.y;
+    	float t4 = (data[MAX_Y] - ray.orig.y)*ray.inv_dir.y;
+    	float t5 = (data[MIN_Z] - ray.orig.z)*ray.inv_dir.z;
+    	float t6 = (data[MAX_Z] - ray.orig.z)*ray.inv_dir.z;
+
+    	float tmin = fmax(fmax(fmin(t1, t2), fmin(t3, t4)), fmin(t5, t6));
+    	float tmax = fmin(fmin(fmax(t1, t2), fmax(t3, t4)), fmax(t5, t6));
+
+//    	// if tmax < 0, ray (line) is intersecting AABB, but whole AABB is behind us
+//    	if (tmax < 0)
+//    	{
+//    	    //t = tmax;
+//    	    //return -1.0f;
+//    		return false;
+//    	}
+//
+//    	// if tmin > tmax, ray doesn't intersect AABB
+//    	if (tmin > tmax)
+//    	{
+//    	    //t = tmax;
+//    	    //return -1.0f;
+//    		return false;
+//    	}
+
+    	//t = tmin;
+    	//return tmin;
+    	return (tmax >= tmin && tmax >= 0.0f);
     }
 
     bool checkRayIntersect_new_t(const float &fromX, const float &fromY, const float &fromZ,

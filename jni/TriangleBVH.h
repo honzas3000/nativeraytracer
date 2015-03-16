@@ -1,24 +1,24 @@
-#ifndef _OBJECTBVH_H
-#define _OBJECTBVH_H
+#ifndef _TRIANGLEBVH_H
+#define _TRIANGLEBVH_H
 
 #include <stdlib.h>
 //#include <arm_neon.h>
 
 #include <AABB.h>
 #include <Structures.h>
+#include <Triangle.h>
 #include <BVHStructures.h>
 //#include <RigidObject.h>
 
-// A BVH for scene objects.
-template <typename T>
-class BVH {
+// A BVH for triangle primitives.
+class TriangleBVH {
     // Construction data.
 	float C_t, C_i;
 	int divBuckets, numPrimInLeaf;
 	nodeBucket* bucketList;
 
 	// Scene data
-	T* objArray;
+	Triangle* objArray;
 	int objArray_size;
 	int numObj;
 
@@ -29,11 +29,11 @@ class BVH {
 	int nodeList_size;
 	int numBvhNodes;
 public:
-	BVH() : C_t(1.0f), C_i(1.0f), divBuckets(10), numPrimInLeaf(3), nodeList(NULL), nodeList_size(0), numBvhNodes(0) {
+	TriangleBVH() : C_t(1.0f), C_i(1.0f), divBuckets(10), numPrimInLeaf(3), nodeList(NULL), nodeList_size(0), numBvhNodes(0) {
 		bucketList = new nodeBucket[divBuckets];
 	}
 
-	~BVH() {
+	~TriangleBVH() {
 		delete[] primIndexArray;
 		//delete[] nodeStack;
 		delete[] bucketList;
@@ -59,8 +59,9 @@ private:
 
 	void containPrimitives(AABB &box, int* &_primIndexArray, const int &_numPrim) {
 		for(unsigned int i=0; i<_numPrim; i++) {
-//			box.contain(objArray[_primIndexArray[i]]);
-            objArray[_primIndexArray[i]].containSelfInAABB(box);
+            box.contain(objArray[_primIndexArray[i]].v1);
+            box.contain(objArray[_primIndexArray[i]].v2);
+            box.contain(objArray[_primIndexArray[i]].v3);
 		}
 	}
 
@@ -71,11 +72,15 @@ private:
 
 		int curDivBuckets = divBuckets > _primCount ? _primCount : divBuckets;
 
+//		LOGI("curDivBuckets: %d.", curDivBuckets);
+
 		clearBucketList();
 
 		float left, right;
 		left = objArray[_primIndexArray[0]].c[_divAxis];
 		right = objArray[_primIndexArray[_primCount - 1]].c[_divAxis];
+
+//		LOGI("Got left and right.");
 
 		float bucketSize = (right - left) / (float)curDivBuckets;
 		// Distribute primitives into buckets
@@ -100,22 +105,30 @@ private:
 			bucketList[0].numPrim = _primCount;
 		}
 
+//		LOGI("Distributed.");
+
 		// Contain from left to right.
 		containPrimitives(bucketList[0].leftBox, bucketList[0].primIndexArray, bucketList[0].numPrim);
 		bucketList[0].leftPrimitiveCount = bucketList[0].numPrim;
+//		LOGI("Contained left 0.");
 		for(unsigned int i=1; i<curDivBuckets; i++) {
 			bucketList[i].leftBox.contain(bucketList[i-1].leftBox);
 			containPrimitives(bucketList[i].leftBox, bucketList[i].primIndexArray, bucketList[i].numPrim);
 			bucketList[i].leftPrimitiveCount = bucketList[i].numPrim + bucketList[i-1].leftPrimitiveCount;
+//			LOGI("Contained left %d.", i);
 		}
 		// Contain from right to left.
 		containPrimitives(bucketList[curDivBuckets-1].leftBox, bucketList[curDivBuckets-1].primIndexArray, bucketList[curDivBuckets-1].numPrim);
 		bucketList[curDivBuckets-1].rightPrimitiveCount = bucketList[curDivBuckets-1].numPrim;
+//		LOGI("Contained right 0.");
 		for(int i=curDivBuckets - 2; i>=0; i--) {
 			bucketList[i].rightBox.contain(bucketList[i+1].rightBox);
 			containPrimitives(bucketList[i].rightBox, bucketList[i].primIndexArray, bucketList[i].numPrim);
 			bucketList[i].rightPrimitiveCount = bucketList[i].numPrim + bucketList[i+1].rightPrimitiveCount;
+//			LOGI("Contained right %d.", i);
 		}
+
+//		LOGI("Contained both ways.");
 
 		// Find the best dividing plane.
 		for(unsigned int i=0; i<curDivBuckets-1; i++) {
@@ -149,7 +162,7 @@ private:
 		}
 	}
 public:
-	void createBVH(T* _objArray, const int &_numObj) {
+	void createBVH(Triangle* _objArray, const int &_numObj) {
 //        nodeList = (BVH_node*)(aligned_alloc(32, sizeof(BVH_node) * (_numTri << 1)));
         if(_numObj == 0) {
             nodeList_size = 1;
@@ -183,13 +196,10 @@ public:
 		}
 
         if(nodeList == NULL) {
-            nodeList_size = _numObj << 1;
+//            LOGI("Creating new nodeList of size %d.", numObj << 1);
+            nodeList_size = numObj << 1;
             nodeList = new BVH_node[nodeList_size];
         }
-
-        numBvhNodes = 0;
-
-
 
 		BVH_node* root = &nodeList[0];
 		numBvhNodes = 2; // Skip one, Jacco said.
@@ -197,9 +207,10 @@ public:
 		root->primIndexArray = primIndexArray;
 		root->numPrim_isLeaf = numObj;
 		containPrimitives(root->box, root->primIndexArray, root->numPrim_isLeaf);
+//		LOGI("Root created and primitives contained.");
 
-		int* toSubdivideStack = new int[numObj];
-		int toSubdivideStack_size = numObj;
+		int* toSubdivideStack = new int[nodeList_size];
+		int toSubdivideStack_size = nodeList_size;
 		int numToSubdivide = 0;
 		BVH_node* curNode;
 		int* primSubList;
@@ -209,11 +220,12 @@ public:
 		numToSubdivide++;
 
 		while(numToSubdivide > 0) {
+//            LOGI("Checking node %d.", toSubdivideStack[numToSubdivide-1]);
 			curNode = &nodeList[toSubdivideStack[--numToSubdivide]];
 
 			if(curNode->numPrim_isLeaf > numPrimInLeaf) { // Subdivide further.
 				if(nodeList_size - numBvhNodes < 2) {
-					LOGI("Reallocating nodeList.");
+//					LOGI("Reallocating nodeList.");
 					// Reallocate the node array.
 					nodeList_size <<= 1;
 					BVH_node* new_nodeList = new BVH_node[nodeList_size];
@@ -233,24 +245,24 @@ public:
 				BVH_node* rightChild = new BVH_node();
 				numBvhNodes += 2;*/
 
-				//LOGI("Two children created.");
+//				LOGI("Two children created.");
 
 				int divAxis = curNode->box.getWidestAxis();
-				//LOGI("divAxis obtained.");
+//				LOGI("divAxis obtained.");
 
 				// The primitive sub list to work with.
 				primSubList = curNode->primIndexArray;
 				numPrimSubList = curNode->numPrim_isLeaf;
-				//LOGI("primSubList obtained.");
+//				LOGI("primSubList obtained.");
 
 				sortPrimitiveArray(primSubList, numPrimSubList, divAxis);
 
-				//LOGI("Primitive sublist sorted.");
+//				LOGI("Primitive sublist sorted.");
 
 				int divIndex = getDividingIndexBucketing(primSubList, numPrimSubList, curNode->box.getArea(), divAxis);
+//                int divIndex = 1;
 
-				//LOGI("divIndex: %d, numPrim: %d", divIndex, numPrimSubList);
-				//int divIndex = 1;
+//				LOGI("divIndex: %d, numPrim: %d", divIndex, numPrimSubList);
 
 				leftChild->primIndexArray = primSubList;
 				leftChild->numPrim_isLeaf = divIndex;
@@ -270,7 +282,7 @@ public:
 				//curNode->rightChild = numBvhNodes - 1;
 
 				if(toSubdivideStack_size - numToSubdivide < 2) {
-					//LOGI("Reallocating the toSubdivide stack.");
+//					LOGI("Reallocating the toSubdivide stack.");
 					// Reallocate the stack.
 					toSubdivideStack_size <<= 1;
 					int* new_toSubdivideStack = new int[toSubdivideStack_size];
@@ -283,7 +295,7 @@ public:
 				toSubdivideStack[numToSubdivide] = numBvhNodes - 1;
 				numToSubdivide++;
 
-				//LOGI("Added children to stack.");
+//				LOGI("Added children to stack.");
 			}
 		}
 		//nodeStack = new BVH_node*[numBvhNodes];
@@ -293,7 +305,7 @@ public:
 		LOGI("BVH DONE, %d nodes.", numBvhNodes);
 	}
 
-	float traverse(const Ray &ray, int* nearestObj, int* nearestTri) {
+	float traverse(const Ray &ray, int* nearestTri) {
         BVH_node* nodeStack[numBvhNodes];
 		int nodeStackSize = 1;
 
@@ -318,24 +330,19 @@ public:
 					nodeStack[nodeStackSize] = &nodeList[currentNode->leftChild + 1];
 					nodeStackSize++;
 				} else {
-//				    *nearestObj = currentNode->primIndexArray[1];
-//				    return 0.1f;
-
 					leafPrimArray = currentNode->primIndexArray;
 					numLeafPrim = currentNode->numPrim_isLeaf;
 
 					for(unsigned int i=0; i<numLeafPrim; i++) {
 						int pr = currentNode->primIndexArray[i];
 						//dist = rayTriangleIntersection(pr, ray);
-						int tri = -1;
-						dist = objArray[pr].intersect(ray, &tri);
+						dist = objArray[pr].intersect(ray);
 
 						// kontroluje se tady a predtim v rayTriangleIntersection
 						if(dist >= 0.0f && dist < min_dist) { //
 							min_dist = dist;
 //							*nearest = pr;
-                            *nearestObj = pr;
-                            *nearestTri = tri;
+                            *nearestTri = pr;
 						}
 					}
 				}

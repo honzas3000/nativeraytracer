@@ -50,15 +50,14 @@
 
 #include <Structures.h>
 #include <Camera.h>
-#include <BVH.h>
 #include <ObjectBVH.h>
+#include <RigidObject.h>
 
 #define VERT_ARRAY_INIT_SIZE 100000
 #define TRI_ARRAY_INIT_SIZE 100000
 
 struct ThreadCellStartCoord {
-	int start_x, end_x;
-	int start_y, end_y;
+    int start_x, start_y, end_x, end_y;
 };
 
 class RayTracerContext {
@@ -71,21 +70,21 @@ private:
 	Camera cam;
 
 	// Data structures
-	BVH bvh;
-	RayItem* rayStack;
-	int numRayStack;
+//	BVH bvh;
+//	RayItem* rayStack;
+//	int numRayStack;
 	int rayStack_size;
 
 	// MODEL DATA //
-	// Vertices
-	int numVert;
-	int vertArray_size;
-	Vertex* vertArray;
-
-	// Triangles
-	int numTri;
-	int triArray_size;
-	Triangle* triArray;
+//	// Vertices
+//	int numVert;
+//	int vertArray_size;
+//	Vertex* vertArray;
+//
+//	// Triangles
+//	int numTri;
+//	int triArray_size;
+//	Triangle* triArray;
 
 	// Materials
 	int numMat;
@@ -97,12 +96,18 @@ private:
 	int ptLightArray_size;
 	PointLight* ptLightArray;
 
-	// DYNAMIC OBJECT DATA
-	DynamicObject* dynObjArray;
-	int numDynObj;
-	int dynObjArray_size;
+	// MESH DATA
+	int numMesh;
+	int meshArray_size;
+	RigidMeshTemplate* meshArray;
 
-	ObjectBVH objbvh;
+	// Rigid object data
+    int numRigidObj;
+    int rigidObjArray_size;
+    RigidObject* rigidObjArray;
+
+    // OBJECT BVH.
+	BVH<RigidObject> objbvh;
 
 	// parameters
 	float ambient;
@@ -144,15 +149,12 @@ private:
 	int raypacket_x, raypacket_y;
 
 	// Pthreads
-
+    int numThreadCells[NUM_THREADS];
+    ThreadCellStartCoord* threadCellStartCoords[NUM_THREADS];
 
 	pthread_t threads[NUM_THREADS];
 	//pthread_args thread_args[NUM_THREADS];
 	thread_range thread_ranges[NUM_THREADS];
-
-	// Cell grid
-	ThreadCellStartCoord* threadCellStartCoords[NUM_THREADS];
-	int numThreadCells[NUM_THREADS];
 
     // Scene info
     AABB sceneBox;
@@ -204,8 +206,8 @@ public:
 		// Camera data memory object.
 		camData_cl_mem = clCreateBuffer(gpuContext, CL_MEM_READ_ONLY, sizeof(CamData_CL), NULL, &errorCode); printError(errorCode);
 		// Model data memory objects.
-		vertArray_cl_mem = clCreateBuffer(gpuContext, CL_MEM_READ_ONLY, numVert * sizeof(Vertex), NULL, &errorCode); printError(errorCode);
-		triArray_cl_mem = clCreateBuffer(gpuContext, CL_MEM_READ_ONLY, numTri * sizeof(Triangle), NULL, &errorCode); printError(errorCode);
+//		vertArray_cl_mem = clCreateBuffer(gpuContext, CL_MEM_READ_ONLY, numVert * sizeof(Vertex), NULL, &errorCode); printError(errorCode);
+//		triArray_cl_mem = clCreateBuffer(gpuContext, CL_MEM_READ_ONLY, numTri * sizeof(Triangle), NULL, &errorCode); printError(errorCode);
 		matArray_cl_mem = clCreateBuffer(gpuContext, CL_MEM_READ_ONLY, numMat * sizeof(Material), NULL, &errorCode); printError(errorCode);
 		ptLightArray_cl_mem = clCreateBuffer(gpuContext, CL_MEM_READ_ONLY, numPointLights * sizeof(PointLight), NULL, &errorCode); printError(errorCode);
 
@@ -225,8 +227,8 @@ public:
 		printError(errorCode);
 
 		// Model data.
-		errorCode = clEnqueueWriteBuffer(commandQueue, vertArray_cl_mem, CL_TRUE, 0, numVert * sizeof(Vertex), (void*)&vertArray, 0, NULL, NULL); printError(errorCode);
-		errorCode = clEnqueueWriteBuffer(commandQueue, triArray_cl_mem, CL_TRUE, 0, numTri * sizeof(Triangle), (void*)&triArray, 0, NULL, NULL); printError(errorCode);
+//		errorCode = clEnqueueWriteBuffer(commandQueue, vertArray_cl_mem, CL_TRUE, 0, numVert * sizeof(Vertex), (void*)&vertArray, 0, NULL, NULL); printError(errorCode);
+//		errorCode = clEnqueueWriteBuffer(commandQueue, triArray_cl_mem, CL_TRUE, 0, numTri * sizeof(Triangle), (void*)&triArray, 0, NULL, NULL); printError(errorCode);
 		errorCode = clEnqueueWriteBuffer(commandQueue, matArray_cl_mem, CL_TRUE, 0, numMat * sizeof(Material), (void*)&matArray, 0, NULL, NULL); printError(errorCode);
 		errorCode = clEnqueueWriteBuffer(commandQueue, ptLightArray_cl_mem, CL_TRUE, 0, numPointLights * sizeof(PointLight), (void*)&ptLightArray, 0, NULL, NULL); printError(errorCode);
 
@@ -384,29 +386,48 @@ public:
 	}
 
 	void initialize() {
-	    LOGI("Vertices: %d", numVert);
-	    LOGI("Triangles: %d", numTri);
+//	    LOGI("Vertices: %d", numVert);
+//	    LOGI("Triangles: %d", numTri);
 
-	    // Create the BVH for the current scene.
-		bvh.createBVH(vertArray, numVert, triArray, numTri);
+//	    // Create the BVH for the current scene.
+//		bvh.createBVH(vertArray, numVert, triArray, numTri);
 
-		for(int i=0; i<numDynObj; i++) {
-            dynObjArray[i].initBuildTree();
-		}
+        // Build the BVH of every unique mesh.
+        LOGI("numMesh: %d", numMesh);
+        for(unsigned int i=0; i<numMesh; i++) {
+            meshArray[i].buildBVH();
+        }
+        // Supply the final array of meshes to all objects.
+        LOGI("numRigidObj: %d", numRigidObj);
+        for(unsigned int i=0; i<numRigidObj; i++) {
+            rigidObjArray[i].supplyMeshArray(meshArray);
+            switch(i) {
+                case 0: rigidObjArray[i].transformAndRefitAABB(identityM); break;
+                case 1: rigidObjArray[i].transformAndRefitAABB(identityM2); break;
+                default: rigidObjArray[i].transformAndRefitAABB(identityM); break;
+            }
+        }
 
-		objbvh.createBVH(dynObjArray, numDynObj);
+        // Create the Object BVH out of all the existing objects.
+        objbvh.createBVH(rigidObjArray, numRigidObj);
 
+        sceneBox.contain(*(objbvh.getRootAABB()));
 		// Init camera parameters.
         camPos = sceneBox.getCenter();
-        camDist = fmax(sceneBox.getXsize(), fmax(sceneBox.getYsize(), sceneBox.getZsize())) * 1.2f;
-        camHeight = sceneBox.getYsize() * 0.5f;
+        camDist = fmax(sceneBox.getXsize(), fmax(sceneBox.getYsize(), sceneBox.getZsize())) * 2.0f;
+        camHeight = sceneBox.getYsize() * 1.0f;
+
+        LOGI("Scene box:");
+        sceneBox.print();
+        LOGI("Camera rotation center: %f, %f, %f.", camPos.x, camPos.y, camPos.z);
+        LOGI("Camera rotation distance: %f.", camDist);
 
 #ifdef CL
 		initCL();
 #endif
 
 #ifdef RAY_THREADS
-		initThreads();
+//		initThreads();
 		initThreadsCells();
 #endif
 	}
@@ -415,17 +436,17 @@ public:
 
 	RayTracerContext() : deltaAngle(0.8f), angle(0.0f), numPointLights(2), ambient(0.0f), recursion_depth(2), rec_ray_offset(1e-5f) {
 		rayStack_size = 0x7FFFFFFF >> (31 - recursion_depth);
-		rayStack = new RayItem[rayStack_size];
+//		rayStack = new RayItem[rayStack_size];
 
-		// Vertex array
-		vertArray = new Vertex[VERT_ARRAY_INIT_SIZE];
-		vertArray_size = VERT_ARRAY_INIT_SIZE;
-		numVert = 0;
-
-		// Triangle array
-		triArray = new Triangle[TRI_ARRAY_INIT_SIZE];
-		triArray_size = TRI_ARRAY_INIT_SIZE;
-		numTri = 0;
+//		// Vertex array
+//		vertArray = new Vertex[VERT_ARRAY_INIT_SIZE];
+//		vertArray_size = VERT_ARRAY_INIT_SIZE;
+//		numVert = 0;
+//
+//		// Triangle array
+//		triArray = new Triangle[TRI_ARRAY_INIT_SIZE];
+//		triArray_size = TRI_ARRAY_INIT_SIZE;
+//		numTri = 0;
 
 		matArray = new Material[10];
 		matArray_size = 10;
@@ -444,10 +465,18 @@ public:
 		ptLightArray_size = 1;
 		numPointLights = 0;
 
-		// Dynamic object array.
-        dynObjArray = new DynamicObject[2];
-        dynObjArray_size = 2;
-        numDynObj = 0;
+		meshArray = new RigidMeshTemplate[2];
+		meshArray_size = 2;
+		numMesh = 0;
+
+		rigidObjArray = new RigidObject[2];
+		rigidObjArray_size = 2;
+		numRigidObj = 0;
+
+//		// Dynamic object array.
+//        dynObjArray = new DynamicObject[2];
+//        dynObjArray_size = 2;
+//        numDynObj = 0;
 
 		// Setup the camera.
 		Vertex cam_pos = {0.0f, 0.0f, -5.0f};
@@ -472,56 +501,53 @@ public:
 
 	int addPointLight(const float &_x, const float &_y, const float &_z,
 					  const float &_r, const float &_g, const float &_b);
-	int addVertex(const float &_x, const float &_y, const float &_z);
-	int addTriangle(const int &v1, const int &v2, const int &v3, const int &mat_idx);
+//	int addVertex(const int &meshID, const float &_x, const float &_y, const float &_z);
+	int addTriangle(const int &meshID, const float &v1x, const float &v1y, const float &v1z,
+                    const float &v2x, const float &v2y, const float &v2z,
+                    const float &v3x, const float &v3y, const float &v3z, const int &mat_idx);
 	int addMaterial(const float &r, const float &g, const float &b,
 					const float &kd, const float &ks, const float &shine,
 					const float &_T, const float &ior);
 
-    int createDynamicObject(const int &_numVert, const int &_numTri) {
-        if(dynObjArray_size - numDynObj == 0) { // Reallocate the array.
-            dynObjArray_size <<= 1;
-            DynamicObject* new_dynObjArray = new DynamicObject[dynObjArray_size];
-            memcpy(new_dynObjArray, dynObjArray, numDynObj * sizeof(DynamicObject));
-            delete[] dynObjArray;
-            dynObjArray = new_dynObjArray;
+    int createMeshTemplate(const int &_numVert, const int &_numTri) {
+        if(meshArray_size - numMesh == 0) { // Reallocate the array.
+            meshArray_size <<= 1;
+            RigidMeshTemplate* new_meshArray = new RigidMeshTemplate[meshArray_size];
+            memcpy(new_meshArray, meshArray, numMesh * sizeof(RigidMeshTemplate));
+            delete[] meshArray;
+            meshArray = new_meshArray;
         }
 
-        dynObjArray[numDynObj].initialize(_numVert, _numTri);
+        meshArray[numMesh].init(_numVert, _numTri);
+        numMesh++;
 
-        numDynObj++;
-
-        return numDynObj - 1;
+        return numMesh - 1;
     }
 
-    /// Add a vertex to the dynamic object with index dynObjIndex.
-    int addDynamicVertex(const int &dynObjIndex, const float &_x, const float &_y, const float &_z) {
-        if(dynObjIndex >= 0 && dynObjIndex < numDynObj) {
-            return dynObjArray[dynObjIndex].addVertex(_x, _y, _z);
+    int createObject(const int &meshID) {
+        if(meshID >= numMesh) return -1;
+        if(rigidObjArray_size - numRigidObj == 0) { // Reallocate the array.
+            rigidObjArray_size <<= 1;
+            RigidObject* new_rigidObjArray = new RigidObject[rigidObjArray_size];
+            memcpy(new_rigidObjArray, rigidObjArray, numRigidObj * sizeof(RigidObject));
+            delete[] rigidObjArray;
+            rigidObjArray = new_rigidObjArray;
         }
-        return -1;
+
+        rigidObjArray[numRigidObj] = RigidObject(meshID);
+        numRigidObj++;
+
+        return numRigidObj - 1;
     }
 
-    /// Add a triangle to the dynamic object with index dynObjIndex.
-    /**
-        The vertex indices point to the private vertex array of the object.
-        The material index points to the global material array of the context.
-    */
-    int addDynamicTriangle(const int &dynObjIndex, const int &v1, const int &v2, const int &v3, const int &mat_idx) {
-        if(dynObjIndex >= 0 && dynObjIndex < numDynObj) {
-            return dynObjArray[dynObjIndex].addTriangle(v1, v2, v3, mat_idx);
-        }
-        return -1;
-    }
-
-	void updateTriangleCenter(const int &tri_idx);
+//	void updateTriangleCenter(const int &tri_idx);
 
     /// Render using one CPU thread
-	void rayTraceScene(const float &delta);
+//	void rayTraceScene(const float &delta);
 	///
 
 	/// Render using OpenCL
-	void rayTraceSceneCL(const float &delta);
+//	void rayTraceSceneCL(const float &delta);
     ///
 
     /// Render using multiple CPU threads

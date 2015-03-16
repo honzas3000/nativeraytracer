@@ -51,19 +51,20 @@ public class RayTracerLibrary {
 	 * @param v3_idx
 	 * @return
 	 */
-	public static native int addTriangle(int v1_idx, int v2_idx, int v3_idx, int mat_idx);
+	public static native int addTriangle(int objIndex, float v1x, float v1y, float v1z, float v2x, float v2y, float v2z, float v3x, float v3y, float v3z, int mat_idx);
 	//public static native int addSphere(int c_idx, int r_idx, int mat_idx);
 	//public static native int addRadius(float r);
-	public static native int addVertex(float x, float y, float z);
+//	public static native int addVertex(int objIndex, float x, float y, float z);
 	public static native int addMaterial(float r, float g, float b, float kd, float ks, float shine, float T, float ior);
 	public static native int addPointLight(float x, float y, float z, float r, float g, float b);
 	
-	// Dynamic objects
-	public static native int createDynamicObject(int numVert, int numTri);
-	public static native int addDynamicVertex(int dynObjIdx, float x, float y, float z);
-	public static native int addDynamicTriangle(int dynObjIdx, int v1_idx, int v2_idx, int v3_idx, int mat_idx);
+	// Meshes and instances of meshes (objects).
+	public static native int createMeshTemplate(int numVert, int numTri);
+	public static native int createObject(int meshID);
+//	public static native int addDynamicVertex(int dynObjIdx, float x, float y, float z);
+//	public static native int addDynamicTriangle(int dynObjIdx, int v1_idx, int v2_idx, int v3_idx, int mat_idx);
 	
-	public static native void enqueueApplyTransform(int dynObjIdx, float rot_x, float rot_y, float rot_z, float tr_x, float tr_y, float tr_z);
+//	public static native void enqueueApplyTransform(int dynObjIdx, float rot_x, float rot_y, float rot_z, float tr_x, float tr_y, float tr_z);
 	
 	// Native methods.
 	private static native int provideBitmap(Bitmap bmp);
